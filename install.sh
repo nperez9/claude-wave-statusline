@@ -7,16 +7,21 @@ set -euo pipefail
 
 SCOPE="user"
 WITH_SPINNER=1
+WITH_FINISH_SOUND=0
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'EOF'
 Usage: ./install.sh [options]
 
-  --project      install into ./.claude/settings.json (this repo only)
-                 instead of ~/.claude/settings.json (all your sessions)
-  --no-spinner   skip the custom spinner verbs, status line only
-  -h, --help     show this
+  --project           install into ./.claude/settings.json (this repo only)
+                      instead of ~/.claude/settings.json (all your sessions)
+  --no-spinner        skip the custom spinner verbs, status line only
+  --with-finish-sound also install a Stop hook that plays a sound when
+                      Claude finishes a turn (not on compact, not on rewind
+                      -- there is no rewind hook, and compaction fires
+                      PreCompact/PostCompact instead of Stop)
+  -h, --help          show this
 
 The status line script always lands at ~/.claude/statusline.py so a
 project-scoped install still finds it.
@@ -27,6 +32,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --project) SCOPE="project" ;;
     --no-spinner) WITH_SPINNER=0 ;;
+    --with-finish-sound) WITH_FINISH_SOUND=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -49,7 +55,13 @@ mkdir -p "$HOME/.claude" "$SETTINGS_DIR"
 install -m 0755 "$SRC_DIR/statusline.py" "$HOME/.claude/statusline.py"
 echo "installed $HOME/.claude/statusline.py"
 
-WITH_SPINNER="$WITH_SPINNER" SETTINGS="$SETTINGS" python3 <<'PY'
+if [ "$WITH_FINISH_SOUND" = "1" ]; then
+  install -m 0755 "$SRC_DIR/finish-sound.py" "$HOME/.claude/finish-sound.py"
+  install -m 0644 "$SRC_DIR/assets/finish-sound.mp3" "$HOME/.claude/finish-sound.mp3"
+  echo "installed $HOME/.claude/finish-sound.py + finish-sound.mp3"
+fi
+
+WITH_SPINNER="$WITH_SPINNER" WITH_FINISH_SOUND="$WITH_FINISH_SOUND" SETTINGS="$SETTINGS" python3 <<'PY'
 import json, os, shutil, sys, time
 
 path = os.environ["SETTINGS"]
@@ -85,6 +97,17 @@ if os.environ["WITH_SPINNER"] == "1":
              "Sephiroth-dodging", "Phoenix-downing", "Save-pointing", "Airship-boarding",
              "Gil-farming", "Highwinding", "Mognet-mailing", "Cure-casting"]
     data["spinnerVerbs"] = {"mode": "append", "verbs": verbs}
+
+if os.environ["WITH_FINISH_SOUND"] == "1":
+    FINISH_CMD = "python3 ~/.claude/finish-sound.py"
+    stop_list = data.setdefault("hooks", {}).setdefault("Stop", [])
+    # drop any entry we installed on a previous run, so re-running is safe,
+    # without touching any other Stop hooks (or other events) already there
+    stop_list[:] = [entry for entry in stop_list
+                     if not any(h.get("command") == FINISH_CMD
+                                for h in entry.get("hooks", []))]
+    stop_list.append({"hooks": [{"type": "command", "command": FINISH_CMD, "timeout": 10}]})
+    print("added Stop hook: %s" % FINISH_CMD)
 
 with open(path, "w") as fh:
     json.dump(data, fh, indent=2)

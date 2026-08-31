@@ -26,12 +26,27 @@ shutil.copy2(path, "%s.bak.%s" % (path, time.strftime("%Y%m%d-%H%M%S")))
 with open(path) as fh:
     data = json.load(fh) or {}
 removed = [k for k in ("statusLine", "spinnerVerbs") if data.pop(k, None) is not None]
+
+FINISH_CMD = "python3 ~/.claude/finish-sound.py"
+stop_list = data.get("hooks", {}).get("Stop")
+if stop_list:
+    before = len(stop_list)
+    stop_list[:] = [entry for entry in stop_list
+                     if not any(h.get("command") == FINISH_CMD
+                                for h in entry.get("hooks", []))]
+    if len(stop_list) != before:
+        removed.append("Stop hook")
+    if not stop_list:
+        data["hooks"].pop("Stop")
+    if "hooks" in data and not data["hooks"]:
+        data.pop("hooks")
+
 with open(path, "w") as fh:
     json.dump(data, fh, indent=2); fh.write("\n")
 print("removed %s from %s" % (", ".join(removed) or "nothing", path))
 PY
 
 if [ "$PURGE" = "1" ]; then
-  rm -f "$HOME/.claude/statusline.py"
-  echo "deleted ~/.claude/statusline.py"
+  rm -f "$HOME/.claude/statusline.py" "$HOME/.claude/finish-sound.py" "$HOME/.claude/finish-sound.mp3"
+  echo "deleted ~/.claude/statusline.py, finish-sound.py, finish-sound.mp3"
 fi

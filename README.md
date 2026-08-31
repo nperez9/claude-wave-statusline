@@ -32,12 +32,35 @@ second. No restart.
 | --- | --- |
 | `--project` | install into `./.claude/settings.json` (one repo) instead of `~/.claude/settings.json` (everywhere) |
 | `--no-spinner` | skip the custom spinner verbs, status line only |
+| `--with-finish-sound` | also install a `Stop` hook that plays a sound when Claude finishes a turn |
 
 The installer copies `statusline.py` to `~/.claude/statusline.py` and merges two
 keys into `settings.json` — `statusLine` and `spinnerVerbs`. Every other key is
 left exactly as it was, and the file is backed up to `settings.json.bak.<stamp>`
 first. Re-running is safe. `./uninstall.sh` removes both keys again (add
-`--purge` to delete the script too).
+`--purge` to delete the scripts too).
+
+### Optional: finish sound
+
+`--with-finish-sound` copies `finish-sound.py` and `assets/finish-sound.mp3` to
+`~/.claude/` and adds one entry to `settings.json`'s `hooks.Stop` array — any
+other hooks already there, on `Stop` or any other event, are left alone.
+
+It fires **only** on a genuine task completion:
+
+- `Stop` fires once per normal turn, when Claude finishes responding.
+- It does **not** fire during compaction — that's the separate
+  `PreCompact`/`PostCompact` events — and there is no rewind/undo hook to
+  confuse it with.
+- `finish-sound.py` also checks the hook payload's `hook_event_name` itself as
+  a second guard, so it stays a no-op even if it's ever wired to anything but
+  `Stop`.
+
+The player is picked per OS (`afplay` on macOS; the WPF `MediaPlayer` via
+PowerShell on Windows; the first of `ffplay`/`mpg123`/`cvlc`/`paplay` found on
+Linux) and any failure — missing player, unreadable file — is swallowed so a
+broken sound can never block or error out a turn. Swap in your own clip by
+overwriting `~/.claude/finish-sound.mp3`.
 
 Requirements: **python3** (3.8+, stdlib only) and a terminal with truecolor.
 Works on macOS, Linux, and Windows via Git Bash.
@@ -55,11 +78,14 @@ Each row's label is tinted to its own colour so you can find a row by hue.
 Thresholds (`used`, the gauge) stay green → amber → red on purpose: there the
 colour *is* the data.
 
-Two sections ship switched off. Add them to `SECTIONS` at the top of the script:
+One section ships switched off. Add it to `SECTIONS` at the top of the script:
 
 - `"tokens"` — an `input` row (fresh / cached / cache-writes) and an `output`
   row with the cache hit rate.
-- `"limits"` — a `plan` row with 5-hour and 7-day usage bars and reset countdowns.
+
+`"limits"` ships on by default: a `plan` row with 5-hour and 7-day usage bars
+and reset countdowns, sourced from the payload's `rate_limits` field (only
+present for Pro/Max plans, and only after the session's first response).
 
 ## Knobs
 

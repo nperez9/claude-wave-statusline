@@ -19,9 +19,14 @@ import sys
 import time
 import unicodedata
 
+# Windows' console codepage (cp1252) can't encode the block-drawing glyphs
+# below; force UTF-8 so the panel/wave don't crash stdout on that platform.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 # --- knobs -------------------------------------------------------------------
 # Every option below is safe to edit in place; there is no config file.
-SECTIONS = ("model", "env", "context", "cost")   # also: "tokens", "limits"
+SECTIONS = ("model", "env", "context", "cost", "limits")   # also: "tokens"
 GAP = 6                       # columns between the two blocks
 PANEL_WIDTH = 64              # fixed, so the box never resizes with its content
 WAVE_SIDE = "right"           # "right" = panel leads, "left" = wave leads
@@ -240,7 +245,7 @@ def bar(frac, width=12):
 
 
 LABEL_W = 8                   # left label column
-CELL_L = 6                    # sub-label inside a cell
+CELL_L = 7                    # sub-label inside a cell; must exceed "weekly" (6)
 CELL_V = 8                    # value inside a cell, right-aligned
 CELL_SEP = 2                  # blanks between cells
 CELLS = 3                     # cells per data row
@@ -368,7 +373,7 @@ def build_panel(d, active):
     if "limits" in SECTIONS:
         rl = d.get("rate_limits") or {}
         parts = []
-        for key, tag in (("five_hour", "5h"), ("seven_day", "7d")):
+        for key, tag in (("five_hour", "daily"), ("seven_day", "weekly")):
             win = rl.get(key)
             if not win:
                 continue
@@ -376,9 +381,11 @@ def build_panel(d, active):
             left = max(0, int((win.get("resets_at") or 0) - time.time()))
             when = "%dh%02dm" % (left // 3600, (left % 3600) // 60) if left >= 3600 \
                 else "%dm" % (left // 60)
-            parts.append(cell(tag, "%.0f%% %s" % (pct, when), tone_for(pct / 100.0)))
-        rows.append(grid("plan", *parts, tone=VIOLET) if parts
-                    else grid("plan", cell("", "—"), tone=VIOLET))
+            parts.append(cell(tag, "%.0f%% | %s" % (pct, when), tone_for(pct / 100.0)))
+        # Only 2 data points, unlike the ctx/session rows -- skip grid()'s
+        # third filler cell so "daily"/"weekly" don't overflow the panel.
+        body = (" " * CELL_SEP).join(parts) if parts else cell("", "—")
+        rows.append(row("plan", body, VIOLET))
 
     return rows, seps
 
